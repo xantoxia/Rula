@@ -453,11 +453,11 @@ def calculate_rula_scores(arm_angle, arm_abd, shoulder_up, arm_support, forearm_
     rula = get_table3_score(c, d)
 
     if rula <=2:
-        lev, plan, cls = "AL1", "风险程度较低，不需要处理", "risk-low"
+        lev, plan, cls = "AL1", "不需要处理", "risk-low"
     elif rula <=4:
-        lev, plan, cls = "AL2", "进一步调查及必要时进行改善", "risk-medium"
+        lev, plan, cls = "AL2", "进一步调查，必要时改善", "risk-medium"
     elif rula <=6:
-        lev, plan, cls = "AL3", "近日内需进行进一步调查及改善", "risk-medium"
+        lev, plan, cls = "AL3", "近日内进一步调查及改善", "risk-medium"
     else:
         lev, plan, cls = "AL4", "必须立即进行调查及改善", "risk-high"
 
@@ -490,7 +490,7 @@ def call_deepseek_api(messages):
             st.session_state.client = OpenAI(api_key=API_KEY, base_url="https://api.siliconflow.cn/v1")
             st.session_state.api_key_entered = True
         res = ""
-        for chunk in st.session_state.client.chat.completions.create(model="Pro/deepseek-ai/DeepSeek-V3.2", messages=messages, stream=True):
+        for chunk in st.session_state.client.chat.completions.create(model="deepseek-ai/DeepSeek-V4-Flash", messages=messages, stream=True):
             if chunk.choices and chunk.choices[0].delta.content:
                 res += chunk.choices[0].delta.content
         return res
@@ -704,11 +704,10 @@ if st.session_state.need_gen_ai and "last_scores" in st.session_state and st.ses
     with st.spinner("🧠 AI正在生成人因风险分析报告..."):
         ai_prompt = f"""
         你是专业人因工程专家，严格依照RULA、ISO11226标准输出分析报告。
-        ⚠️ 【强制要求，必须严格遵守】
-        1. 报告开头必须首先完整输出【本次评估结果摘要】，格式完全照搬下面给的模板，不能有任何改动
-        2. 绝对不允许在摘要之前写任何开场白、客套话
-        3. 摘要之后再写分部位风险分析和改善建议
-        4. 每一处肢体必须同时写出【实测角度° + 分项得分】
+        ⚠️ 【强制格式要求】
+        1. 开头必须先输出【本次评估结果摘要】，不能有任何开场白
+        2. 每个○条目必须单独回车占一行，绝对不能合并
+        3. 所有肢体必须同时写出【实测角度° + 分项得分】
         
         【本次评估结果摘要】
         - A总分（上肢）：{scores['a_total']}
@@ -718,40 +717,32 @@ if st.session_state.need_gen_ai and "last_scores" in st.session_state and st.ses
         - 行动水准：{scores['action_level']}
         - 处理方案：{scores['action_plan']}
         
-        原始测量角度：
-        手臂弯曲角度：{arm_angle}°
-        前臂弯曲角度：{forearm_angle}°
-        手腕弯曲角度：{wrist_bend}°
-        颈部弯曲角度：{neck_angle}°
-        身躯弯曲角度：{trunk_angle}°
+        评估数据：
+        手臂：{arm_angle}°，得分{scores['arm_final']}
+        前臂：{forearm_angle}°，得分{scores['forearm_final']}
+        手腕：{wrist_bend}°，得分{scores['wrist_final']}
+        颈部：{neck_angle}°，得分{scores['neck_final']}
+        躯干：{trunk_angle}°，得分{scores['trunk_final']}
+        腿部：得分{scores['leg_final']}
+        肌肉：{muscle_state}，得分{scores['muscle_score']}，{scores['muscle_desc']}
+        负荷：{load_state}，得分{scores['load_score']}，{scores['load_desc']}
         
-        各部位最终分项得分：
-        手臂得分：{scores['arm_final']}
-        前臂得分：{scores['forearm_final']}
-        手腕得分：{scores['wrist_final']}
-        颈部得分：{scores['neck_final']}
-        躯干得分：{scores['trunk_final']}
-        腿部得分：{scores['leg_final']}
-        肌肉：{muscle_state}，得分{scores['muscle_score']}，说明：{scores['muscle_desc']}
-        负荷：{load_state}，得分{scores['load_score']}，说明：{scores['load_desc']}
-        
-        输出格式严格照搬样板结构：
+        输出结构：
         ## 一、分部位风险分析（结合RULA标准）
-        1. 上肢（手臂-前臂-手腕）：风险高低概括
-            ○ 手臂（XX°，评分X）：专业风险解读
-            ○ 前臂（XX°，评分X）：专业风险解读
-            ○ 手腕（XX°，评分X）：专业风险解读
+        1. 上肢（手臂-前臂-手腕）：风险概括
+            ○手臂（XX°，评分X）：专业解读
+            ○前臂（XX°，评分X）：专业解读
+            ○手腕（XX°，评分X）：专业解读
         2. 躯干与颈部：整体概括
-            ○ 颈部（XX°，评分X）：解读
-            ○ 身躯（XX°，评分X）：解读
-            ○ 腿部（评分X）：解读
+            ○颈部（XX°，评分X）：解读
+            ○身躯（XX°，评分X）：解读
+            ○腿部（评分X）：解读
         3. 肌肉与负荷因素：概括
-            ○ 肌肉状态：工况名称，评分X + 完整说明
-            ○ 负荷状态：工况名称，评分X + 完整说明
+            ○ 肌肉状态（工况名称，评分X）：解读
+            ○ 负荷状态（工况名称，评分X）：解读
         
         ## 二、可落地的改善建议
         分三类：姿势调整、工位环境优化、轮岗休息方案，务实可执行。
-        语言专业平实，不要多余花哨格式，每一段肢体必须带上角度+分数成对展示。
         """
         
         ai_response = call_deepseek_api([
@@ -773,7 +764,7 @@ if st.session_state.need_gen_ai and "last_scores" in st.session_state and st.ses
           
     # 生成完立即关闭开关，防止重复生成
     st.session_state.need_gen_ai = False
-
+    
 # ===================== 第二步：所有逻辑处理完，再渲染页面内容 =====================
 # 1. 渲染RULA评估结果卡片（只有点击按钮后才显示）
 if "rula_result" in st.session_state and st.session_state.rula_result is not None:
@@ -805,9 +796,9 @@ if "rula_result" in st.session_state and st.session_state.rula_result is not Non
         st.markdown("</div>", unsafe_allow_html=True)
     
     st.markdown(f"""
-    <div style='background-color: #F8F9FA; padding: 20px; border-radius: 10px; margin: 15px 0;'>
-        <h3>行动水准：<span class='{scores['risk_class']}'>{scores['action_level']}</span></h3>
-        <p>处理方案：<span class='{scores['risk_class']}'>{scores['action_plan']}</span></p>
+    <div style="background-color: #F8F9FA; padding: 20px; border-radius: 10px; margin: 15px 0;">
+        <h3>行动水准：<span class="{scores['risk_class']}">{scores['action_level']}</span></h3>
+        <p>处理方案：<span class="{scores['risk_class']}">{scores['action_plan']}</span></p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -877,8 +868,8 @@ with st.sidebar:
     #### 评分标准：
     | RULA总分 | 行动水准 | 处理方案 |
     |----------|----------|----------|
-    | 1-2 | AL1 | 姿势，不需要处理 |
-    | 3-4 | AL2 | 进一步调查及必要时进行改善 |
-    | 5-6 | AL3 | 近日内需进行进一步调查及改善 |
+    | 1-2 | AL1 | 不需要处理 |
+    | 3-4 | AL2 | 进一步调查，必要时改善 |
+    | 5-6 | AL3 | 近日内进一步调查及改善 |
     | ≥7 | AL4 | 必须立即进行调查及改善 |
     """)

@@ -234,16 +234,50 @@ def process_image(image):
             l_sho = pt(mp_pose.PoseLandmark.LEFT_SHOULDER)
             r_sho = pt(mp_pose.PoseLandmark.RIGHT_SHOULDER)
             l_elb = pt(mp_pose.PoseLandmark.LEFT_ELBOW)
+            r_elb = pt(mp_pose.PoseLandmark.RIGHT_ELBOW)
             l_wri = pt(mp_pose.PoseLandmark.LEFT_WRIST)
+            r_wri = pt(mp_pose.PoseLandmark.RIGHT_WRIST)
             l_index = pt(mp_pose.PoseLandmark.LEFT_INDEX)
+            r_index = pt(mp_pose.PoseLandmark.RIGHT_INDEX)
             l_pinky = pt(mp_pose.PoseLandmark.LEFT_PINKY)
+            r_pinky = pt(mp_pose.PoseLandmark.RIGHT_PINKY)
             l_hip = pt(mp_pose.PoseLandmark.LEFT_HIP)
             r_hip = pt(mp_pose.PoseLandmark.RIGHT_HIP)
             l_knee = pt(mp_pose.PoseLandmark.LEFT_KNEE)
             r_knee = pt(mp_pose.PoseLandmark.RIGHT_KNEE)
 
-            mid_sho = [(l_sho[i]+r_sho[i])/2 for i in range(3)]
-            mid_hip = [(l_hip[i]+r_hip[i])/2 for i in range(3)]
+            # ===================== ✅ 新增：自动选择可见度更高的一侧（核心修复）=====================
+            # 计算左右侧上肢平均可见度
+            left_arm_vis = sum([
+                landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].visibility,
+                landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].visibility,
+                landmarks[mp_pose.PoseLandmark.LEFT_WRIST].visibility
+            ]) / 3
+            right_arm_vis = sum([
+                landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].visibility,
+                landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW].visibility,
+                landmarks[mp_pose.PoseLandmark.RIGHT_WRIST].visibility
+            ]) / 3
+
+            # 自动选可见度高的一侧作为计算主侧
+            if left_arm_vis >= right_arm_vis:
+                sho_main, elb_main, wri_main = l_sho, l_elb, l_wri
+                index_main, pinky_main = l_index, l_pinky
+                hip_main, knee_main = l_hip, l_knee
+            else:
+                sho_main, elb_main, wri_main = r_sho, r_elb, r_wri
+                index_main, pinky_main = r_index, r_pinky
+                hip_main, knee_main = r_hip, r_knee
+
+            # 肩、髋中点：双侧都可见用中点，否则用主侧单点（兼容侧身）
+            if is_visible(mp_pose.PoseLandmark.LEFT_SHOULDER) and is_visible(mp_pose.PoseLandmark.RIGHT_SHOULDER):
+                mid_sho = [(l_sho[i]+r_sho[i])/2 for i in range(3)]
+            else:
+                mid_sho = sho_main
+            if is_visible(mp_pose.PoseLandmark.LEFT_HIP) and is_visible(mp_pose.PoseLandmark.RIGHT_HIP):
+                mid_hip = [(l_hip[i]+r_hip[i])/2 for i in range(3)]
+            else:
+                mid_hip = hip_main
 
             # --------------------------
             # 颈部：强制成功标记逻辑
@@ -266,15 +300,13 @@ def process_image(image):
                 default_angles.append("颈部")
 
             # --------------------------
-            # 身躯：强制成功标记逻辑
+            # 身躯：强制成功标记逻辑（单侧兼容版）
             # --------------------------
             trunk_ok = False
-            if (is_visible(mp_pose.PoseLandmark.LEFT_SHOULDER) 
-                and is_visible(mp_pose.PoseLandmark.RIGHT_SHOULDER)
-                and is_visible(mp_pose.PoseLandmark.LEFT_HIP)
-                and is_visible(mp_pose.PoseLandmark.RIGHT_HIP)
-                and is_visible(mp_pose.PoseLandmark.LEFT_KNEE)
-                and is_visible(mp_pose.PoseLandmark.RIGHT_KNEE)):
+            # 不再强制双侧全可见，主侧肩+髋+膝可见即可计算
+            if (is_visible(mp_pose.PoseLandmark.LEFT_SHOULDER if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_SHOULDER)
+                and is_visible(mp_pose.PoseLandmark.LEFT_HIP if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_HIP)
+                and is_visible(mp_pose.PoseLandmark.LEFT_KNEE if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_KNEE)):
                 
                 trunk_angle = calculate_trunk_flexion(l_sho, r_sho, l_hip, r_hip, l_knee, r_knee)
                 if trunk_angle is not None and 0 <= trunk_angle <= 85:
@@ -284,37 +316,41 @@ def process_image(image):
                 default_angles.append("身躯")
 
             # --------------------------
-            # 手臂：强制成功标记逻辑
+            # 手臂：强制成功标记逻辑（自动选侧版）
             # --------------------------
             arm_ok = False
-            if is_visible(mp_pose.PoseLandmark.LEFT_HIP) and is_visible(mp_pose.PoseLandmark.LEFT_SHOULDER) and is_visible(mp_pose.PoseLandmark.LEFT_ELBOW):
-                arm_angle = calculate_angle(mid_hip, l_sho, l_elb)
+            if is_visible(mp_pose.PoseLandmark.LEFT_HIP if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_HIP) \
+                and is_visible(mp_pose.PoseLandmark.LEFT_SHOULDER if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_SHOULDER) \
+                and is_visible(mp_pose.PoseLandmark.LEFT_ELBOW if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_ELBOW):
+                arm_angle = calculate_angle(mid_hip, sho_main, elb_main)
                 rula_angles["arm_angle"] = arm_angle
                 arm_ok = True
             if not arm_ok:
                 default_angles.append("手臂")
 
             # --------------------------
-            # 前臂：强制成功标记逻辑
+            # 前臂：强制成功标记逻辑（自动选侧版）
             # --------------------------
             forearm_ok = False
-            if is_visible(mp_pose.PoseLandmark.LEFT_SHOULDER) and is_visible(mp_pose.PoseLandmark.LEFT_ELBOW) and is_visible(mp_pose.PoseLandmark.LEFT_WRIST):
-                forearm_angle = calculate_angle(l_sho, l_elb, l_wri)
+            if is_visible(mp_pose.PoseLandmark.LEFT_SHOULDER if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_SHOULDER) \
+                and is_visible(mp_pose.PoseLandmark.LEFT_ELBOW if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_ELBOW) \
+                and is_visible(mp_pose.PoseLandmark.LEFT_WRIST if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_WRIST):
+                forearm_angle = calculate_angle(sho_main, elb_main, wri_main)
                 rula_angles["forearm_angle"] = forearm_angle
                 forearm_ok = True
             if not forearm_ok:
                 default_angles.append("前臂")
-
+                
             # --------------------------
-            # 手腕：强制成功标记逻辑
+            # 手腕：强制成功标记逻辑（自动选侧版）
             # --------------------------
             wrist_ok = False
-            if (is_visible(mp_pose.PoseLandmark.LEFT_ELBOW) 
-                and is_visible(mp_pose.PoseLandmark.LEFT_WRIST)
-                and is_visible(mp_pose.PoseLandmark.LEFT_INDEX)
-                and is_visible(mp_pose.PoseLandmark.LEFT_PINKY)):
+            if (is_visible(mp_pose.PoseLandmark.LEFT_ELBOW if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_ELBOW) 
+                and is_visible(mp_pose.PoseLandmark.LEFT_WRIST if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_WRIST)
+                and is_visible(mp_pose.PoseLandmark.LEFT_INDEX if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_INDEX)
+                and is_visible(mp_pose.PoseLandmark.LEFT_PINKY if left_arm_vis >= right_arm_vis else mp_pose.PoseLandmark.RIGHT_PINKY)):
                 
-                wrist_angle = calculate_wrist_bend(l_elb, l_wri, l_index, l_pinky)
+                wrist_angle = calculate_wrist_bend(elb_main, wri_main, index_main, pinky_main)
                 if wrist_angle is not None:
                     rula_angles["wrist_bend"] = wrist_angle
                     wrist_ok = True
@@ -509,8 +545,8 @@ st.markdown("<h1 class='main-header'>RULA 快速上肢评估 系统</h1>", unsaf
 st.markdown("本系统基于**RULA快速上肢评估法**（McAtamney & Corlett, 1993）开发，严格遵循**ISO 11226:2000《人因工程-静态工作姿势评估》**国际标准。")
 
 # 照片自动识别角度功能
-st.markdown("<div class='section-header'>【第一部分】📷 照片识别角度（建议90°侧身全身拍照）</div>", unsafe_allow_html=True)
-uploaded_file = st.file_uploader("上传工作姿势照片（支持JPG、PNG）", type=["jpg", "jpeg", "png"])
+st.markdown("<div class='section-header'>【第一部分】📷 照片识别角度</div>", unsafe_allow_html=True)
+uploaded_file = st.file_uploader("上传工作姿势照片（建议90°侧身全身拍照）（支持JPG、PNG）", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
     with st.spinner("正在识别姿势..."):
@@ -755,7 +791,7 @@ if st.session_state.need_gen_ai and "last_scores" in st.session_state and st.ses
             
             ○身躯（XX°，评分X）：专业解读
             
-            ○腿部（评分X）：专业解读
+            ○腿部（评分X）：解读
             
         3. 肌肉与负荷因素：
         
@@ -852,25 +888,35 @@ else:
             
             # 该评估的独立聊天输入框（key也要改成用actual_number，避免重复）
             prompt = st.chat_input(f"针对第{actual_number}次评估继续咨询人因工程相关问题...", key=f"chat_input_{actual_number}")
+            
+            # ========== 第一步：用户发送消息，立即添加到历史并刷新 ==========
             if prompt:
                 if not st.session_state.api_key_entered:
                     st.error("请先完成评估，系统会自动初始化API")
                 else:
-                    # 添加用户消息到该评估的聊天历史
+                    # 立即添加用户消息到聊天历史
                     item["messages"].append({"role": "user", "content": prompt})
+                    # 立即刷新页面，让用户看到自己发的问题
+                    st.rerun()
+            
+            # ========== 第二步：检查是否有未回复的用户消息，如果有就自动回复 ==========
+            if item["messages"] and item["messages"][-1]["role"] == "user":
+                with st.spinner("思考中..."):
+                    # 构建上下文：系统提示 + 本次评估报告 + 历史聊天记录
+                    context_messages = [
+                        {"role": "system", "content": "你是专业的人因工程专家，精通RULA快速上肢评估法和ISO 11226国际标准。请基于上面的RULA评估报告回答用户的问题。"},
+                        {"role": "assistant", "content": item["content"]}
+                    ] + item["messages"][:-1]  # 注意：这里去掉最后一条用户消息，因为会在下面单独加
                     
-                    with st.spinner("思考中..."):
-                        # 构建上下文：系统提示 + 本次评估报告 + 历史聊天记录
-                        context_messages = [
-                            {"role": "system", "content": "你是专业的人因工程专家，精通RULA快速上肢评估法和ISO 11226国际标准。请基于上面的RULA评估报告回答用户的问题。"},
-                            {"role": "assistant", "content": item["content"]}
-                        ] + item["messages"]
-                        
-                        full_response = call_deepseek_api(context_messages)
-                        if full_response:
-                            # 添加AI回复到该评估的聊天历史
-                            item["messages"].append({"role": "assistant", "content": full_response})
-                            st.rerun()
+                    # 添加最后一条用户消息
+                    context_messages.append(item["messages"][-1])
+                    
+                    full_response = call_deepseek_api(context_messages)
+                    if full_response:
+                        # 添加AI回复到聊天历史
+                        item["messages"].append({"role": "assistant", "content": full_response})
+                        # 再次刷新页面，显示AI回复
+                        st.rerun()
 
 # 侧边栏说明
 with st.sidebar:

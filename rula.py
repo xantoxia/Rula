@@ -558,7 +558,7 @@ if uploaded_file:
         col_img, col_angles = st.columns([3, 2])
         
         with col_img:
-            st.image(cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB), caption="姿势识别结果", width=640)
+            st.image(cv2.cvtColor(processed_image, cv2.COLOR_BGR2RGB), caption="姿势识别结果", width=320)
         
         with col_angles:
             st.markdown("### 📊 角度识别结果")
